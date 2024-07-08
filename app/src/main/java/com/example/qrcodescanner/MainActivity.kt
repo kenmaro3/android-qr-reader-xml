@@ -24,35 +24,40 @@ import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+
+
 
 class MainActivity : ComponentActivity() {
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var previewView: PreviewView
-    private lateinit var barcodeText: TextView
+    private lateinit var barcodeRecyclerView: RecyclerView
     private lateinit var overlayView: OverlayView
+    private lateinit var barcodeAdapter: BarcodeAdapter
+
+    // List to store scanned QR codes
+    private val scannedBarcodes = mutableListOf<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         previewView = findViewById(R.id.previewView)
-        barcodeText = findViewById(R.id.barcodeText)
+        barcodeRecyclerView = findViewById(R.id.barcodeRecyclerView)
         overlayView = findViewById(R.id.overlayView)
 
         cameraExecutor = Executors.newSingleThreadExecutor()
+
+        // Setup RecyclerView
+        barcodeAdapter = BarcodeAdapter(scannedBarcodes)
+        barcodeRecyclerView.adapter = barcodeAdapter
+        barcodeRecyclerView.layoutManager = LinearLayoutManager(this)
 
         if (allPermissionsGranted()) {
             startCamera()
         } else {
             requestPermissions()
-        }
-
-        barcodeText.setOnClickListener {
-            val text = barcodeText.text.toString()
-            if (text.startsWith("http://") || text.startsWith("https://")) {
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(text))
-                startActivity(browserIntent)
-            }
         }
     }
 
@@ -106,18 +111,20 @@ class MainActivity : ComponentActivity() {
             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
             barcodeScanner.process(image)
                 .addOnSuccessListener { barcodes ->
+                    val newScannedBarcodes = mutableListOf<String>()
                     for (barcode in barcodes) {
                         when (barcode.valueType) {
                             Barcode.TYPE_URL -> {
-                                barcodeText.text = barcode.url!!.url
+                                barcode.url?.url?.let { newScannedBarcodes.add(it) }
                                 barcode.boundingBox?.let { updateOverlay(it, imageProxy) }
                             }
                             Barcode.TYPE_TEXT -> {
-                                barcodeText.text = barcode.displayValue
+                                barcode.displayValue?.let { newScannedBarcodes.add(it) }
                                 barcode.boundingBox?.let { updateOverlay(it, imageProxy) }
                             }
                         }
                     }
+                    updateScannedBarcodes(newScannedBarcodes)
                 }
                 .addOnFailureListener {
                     Toast.makeText(this, "Failed to scan barcode", Toast.LENGTH_SHORT).show()
@@ -125,6 +132,16 @@ class MainActivity : ComponentActivity() {
                 .addOnCompleteListener {
                     imageProxy.close()
                 }
+        }
+    }
+
+    private fun updateScannedBarcodes(newScannedBarcodes: List<String>) {
+        // Add new scanned barcodes to the list only if list content changes
+        // This is to avoid unnecessary updates to the RecyclerView
+        if (scannedBarcodes != newScannedBarcodes) {
+            scannedBarcodes.clear()
+            scannedBarcodes.addAll(newScannedBarcodes)
+            barcodeAdapter.notifyDataSetChanged()
         }
     }
 
@@ -179,3 +196,4 @@ class MainActivity : ComponentActivity() {
         cameraExecutor.shutdown()
     }
 }
+
